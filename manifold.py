@@ -418,9 +418,19 @@ class Manifold(object):
                                         return_chart_and_param=True)
         return self.charts[chart_index].prox_jac(x)
 
-    def assemble_vector_matrices(self):
-        """Assembles stiffness and mass matrices"""
+    def assemble_vector_matrices(self, newton=False, u=None):
+        """
+        Assembles stiffness and mass matrices
+        If newton is True (default: False), the additional argoment u
+        is needed (default: None), in the form of an array of shape (N, 2)
+        which contains the displacements of the grid points in the current
+        configuration with respect to the reference positions. The normals
+        used to assemble the mass matrix are then evaluated at the current
+        position instead of the reference position.
+        """
         x = self.grid_coordinates
+        if newton:
+            x_current = x + u
         N = x.shape[0] - 1
         # coo format without worrying about duplicate entries!
         # see the scipy documentation
@@ -432,9 +442,15 @@ class Manifold(object):
             # discrete tangent vector, used to build the discrete normal
             tangent_vector = x[ii+1] - x[ii]
             h = np.linalg.norm(tangent_vector)
-            normal_vector = np.array((-tangent_vector[1],
+            if newton:
+                # use the normal to the true surface evaluated at the current midpoint
+                x_current_midpoint = 0.5 * (x_current[ii] + x_current[ii+1])
+                normal_vector = self.normal_vector(x_current_midpoint)
+                normal_vector = normal_vector / np.linalg.norm(normal_vector)
+            else:
+                normal_vector = np.array((-tangent_vector[1],
                                        tangent_vector[0]))
-            normal_vector = normal_vector / np.linalg.norm(normal_vector)
+                normal_vector = normal_vector / np.linalg.norm(normal_vector)
             # rejection matrix
             R = np.outer(normal_vector, normal_vector)
             # projection matrix
@@ -458,6 +474,36 @@ class Manifold(object):
         M = coo_matrix((Mdata, (row, col)), shape=(2*(N+1), 2*(N+1)))
         return K, M
 
+    def assemble_newton_rhs1(self, u, method='trapz'):
+        """
+        Assemble the first contribution to the Newton rhs vector
+        It is the one with the proximal operator
+        The other contribution contains the Jacobian and is known from
+        the previous Newton step
+        """
+        x = self.grid_coordinates
+        x_current = x + u
+        N = x.shape[0]-1
+        b = np.zeros(2*(N+1))
+
+        if method=='trapz':
+            for ii in range(N):
+                h = np.linalg.norm(x[ii+1, :] - x[ii, :])
+                for jj in range(2):
+                    x_c_rej = self.proximal_point(x_current[ii+jj]) - x_current[ii+jj]
+                    for rr in range(2):
+                        b[ii + jj + rr*(N+1)] += 0.5 * h * x_c_rej[rr]
+        elif method=='midpoint':
+            for ii in range(N):
+                h = np.linalg.norm(x[ii+1, :] - x[ii, :])
+                x_current_midpoint = 0.5 * (x_current[ii] + x_current[ii+1])
+                x_c_mp_proj = self.proximal_point(x_current_midpoint)
+                x_c_mp_rej = x_c_mp_proj - x_current_midpoint # rejection
+                for jj in range(2): # loop on element dofs
+                    for rr in range(2): # loop on geometric dimensions
+                        b[ii + jj + rr*(N+1)] += 0.5 * h * x_c_mp_rej[rr]
+
+        return b
 
     def assemble_vector_rhs(self, method='midpoint'):
         """
@@ -484,3 +530,32 @@ class Manifold(object):
                     for rr in range(2):
                         b[ii + jj + rr*(N+1)] += h*kn[rr]
         return b
+
+    def apply_bc(self, A, b, bc_L, bc_R):
+        x = self.grid_coordinates
+        N = x.shape[0]
+        # Dirichlet boundary condition: act on first and last line
+        # the matrix is in csr format
+        for ii in range(2):
+            # first node
+            row_ind = ii*N
+            row_start = A.indptr[row_ind]
+            row_end = A.indptr[row_ind+1]
+            for col_ind in range(row_start, row_end):
+                # if it is a diagonal element, keep it and set the rhs
+                if A.indices[col_ind]==row_ind:
+                    # done like this to try to keep some balance
+                    # (setting the diag element to 1 may ruin the condition number)
+                    b[row_ind] = A.data[col_ind]*bc_L[ii]
+                # otherwise, set to zero
+                else:
+                    A.data[col_ind] = 0
+            # last node
+            row_ind = N-1 + ii*N
+            row_start = A.indptr[row_ind]
+            row_end = A.indptr[row_ind+1]
+            for col_ind in range(row_start, row_end):
+                if A.indices[col_ind]==row_ind:
+                    b[row_ind] = A.data[col_ind]*bc_R[ii]
+                else:
+                    A.data[col_ind] = 0
