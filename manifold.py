@@ -474,6 +474,50 @@ class Manifold(object):
         M = coo_matrix((Mdata, (row, col)), shape=(2*(N+1), 2*(N+1)))
         return K, M
 
+    def assemble_lumped_mass_newton(self, u):
+        """
+        Assembles a lumped mass matrix to be used for the Newton method,
+        which corresponds to requiring the grid nodes to lie on the
+        curve, instead of the midpoints
+        """
+        x = self.grid_coordinates
+        x_current = x + u
+        N = x.shape[0] - 1
+        Mdata = []
+        row = []
+        col = []
+
+        # compute the first rejection matrix
+        normal_vector = self.normal_vector(x_current[0,:])
+        normal_vector = normal_vector / np.linalg.norm(normal_vector)
+        R_old = np.outer(normal_vector, normal_vector)
+
+        for ii in range(N): # loop on elements
+            tangent_vector = x[ii+1] - x[ii]
+            h = np.linalg.norm(tangent_vector)
+            # compute normal vector for second node
+            # (first node already done at previous iteration)
+            normal_vector = self.normal_vector(x_current[ii+1,:])
+            normal_vector = normal_vector / np.linalg.norm(normal_vector)
+            R = np.outer(normal_vector, normal_vector)
+
+            for rr in range(2): # first global block-index
+                for ss in range(2): # second global block-index
+                    # first node of the element
+                    Mdata.append(0.5 * h * R_old[rr, ss])
+                    row.append(ii + rr*(N+1))
+                    col.append(ii + ss*(N+1))
+
+                    # second node of the element
+                    Mdata.append(0.5 * h * R[rr, ss])
+                    row.append(ii + rr*(N+1))
+                    col.append(ii + ss*(N+1))
+
+            R_old = R.copy()
+
+        M = coo_matrix((Mdata, (row, col)), shape=(2*(N+1), 2*(N+1)))
+        return M
+
     def assemble_newton_rhs1(self, u, method='trapz'):
         """
         Assemble the first contribution to the Newton rhs vector

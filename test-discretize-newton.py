@@ -28,7 +28,7 @@ bc_R = np.array((0., 0.))
 
 # newton tolerance
 newt_tol = 1e-6
-maxit = 1
+maxit = 20
 
 #------------ end of user-defined parameters ----------------#
 
@@ -85,7 +85,10 @@ print('\nIteration 1')
 
 # matrices assembly
 K, M = m1.assemble_vector_matrices()
-A = K + k_penalty/h**2 * M # system matrix
+M_lump = m1.assemble_lumped_mass_newton(np.zeros((N, 2)))
+#A = K + k_penalty/h**2 * M # system matrix
+A = K + k_penalty/h**2 * M_lump # system matrix with mass lumping
+
 
 # rhs assembly
 b = np.zeros(2*N)
@@ -109,9 +112,13 @@ while (err>newt_tol and ii<maxit):
     sol_old = sol.copy()
 
     K, M = m1.assemble_vector_matrices(newton=True, u=vec_sol)
-    b = k_penalty/h**2 * (m1.assemble_newton_rhs1(u=vec_sol, method='midpoint')
+    M_lump = m1.assemble_lumped_mass_newton(vec_sol)
+    b = k_penalty/h**2 * (m1.assemble_newton_rhs1(u=vec_sol, method='trapz')
                                 + M@sol_old)
-    A = K + k_penalty/h**2 * M
+
+
+    #A = K + k_penalty/h**2 * M
+    A = K + k_penalty/h**2 * M_lump
     m1.apply_bc(A, b, bc_L, bc_R)
 
     sol, info = gmres(A, b)
