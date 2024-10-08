@@ -522,8 +522,8 @@ class Manifold(object):
 
                     # second node of the element
                     Mdata.append(0.5 * h * R[rr, ss])
-                    row.append(ii + rr*(N+1))
-                    col.append(ii + ss*(N+1))
+                    row.append(ii + 1 + rr*(N+1))
+                    col.append(ii + 1 + ss*(N+1))
 
             R_old = R.copy()
 
