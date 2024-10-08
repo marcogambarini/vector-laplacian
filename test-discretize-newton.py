@@ -16,10 +16,10 @@ R = 1
 theta = 50*np.pi/180
 
 # mesh size
-h = 0.2
+h = 0.1
 
 # penalty coefficient for tangentiality constraint
-k_penalty = 10.
+k_penalty = 1e1
 
 
 # boundary conditions
@@ -28,7 +28,10 @@ bc_R = np.array((0., 0.))
 
 # newton tolerance
 newt_tol = 1e-6
-maxit = 20
+maxit = 50
+
+inexact = True
+mass_lumping = True
 
 #------------ end of user-defined parameters ----------------#
 
@@ -85,14 +88,19 @@ print('\nIteration 1')
 
 # matrices assembly
 K, M = m1.assemble_vector_matrices()
-M_lump = m1.assemble_lumped_mass_newton(np.zeros((N, 2)))
-#A = K + k_penalty/h**2 * M # system matrix
-A = K + k_penalty/h**2 * M_lump # system matrix with mass lumping
+if mass_lumping:
+    M_lump = m1.assemble_lumped_mass_newton(np.zeros((N, 2)),
+                                            inexact=inexact)
+    A = K + k_penalty/h**2 * M_lump # system matrix with mass lumping
+else:
+    A = K + k_penalty/h**2 * M # system matrix
+
 
 
 # rhs assembly
 b = np.zeros(2*N)
-m1.apply_bc(A, b, bc_L, bc_R)
+#m1.apply_bc(A, b, bc_L, bc_R, mu=k_penalty/h**2)
+m1.apply_bc(A, b, bc_L, bc_R, mu=None)
 
 sol, info = gmres(A, b)
 print('GMRES solver finished with status ', info)
@@ -105,21 +113,32 @@ vec_sol[:, 1] = sol[N:]
 err = np.linalg.norm(sol - sol_old)
 print('Error = ', err)
 
+err_vec = [err]
+
 while (err>newt_tol and ii<maxit):
 
     ii += 1
     print('\nIteration ', ii)
     sol_old = sol.copy()
 
-    K, M = m1.assemble_vector_matrices(newton=True, u=vec_sol)
-    M_lump = m1.assemble_lumped_mass_newton(vec_sol)
-    b = k_penalty/h**2 * (m1.assemble_newton_rhs1(u=vec_sol, method='trapz')
+    if mass_lumping:
+        M_lump = m1.assemble_lumped_mass_newton(vec_sol,
+                                                inexact=inexact)
+        b = k_penalty/h**2 * (m1.assemble_newton_rhs1(u=vec_sol, method='trapz')
+                                + M_lump@sol_old)
+        A = K + k_penalty/h**2 * M_lump
+    else:
+        K, M = m1.assemble_vector_matrices(newton=True, u=vec_sol)
+        b = k_penalty/h**2 * (m1.assemble_newton_rhs1(u=vec_sol, method='midpoint')
                                 + M@sol_old)
+        A = K + k_penalty/h**2 * M
+
+    print('points on each chart in final grid')
+    print(m1.point_distribution_on_charts(vec_sol + x))
 
 
-    #A = K + k_penalty/h**2 * M
-    A = K + k_penalty/h**2 * M_lump
-    m1.apply_bc(A, b, bc_L, bc_R)
+    # m1.apply_bc(A, b, bc_L, bc_R, mu=k_penalty/h**2)
+    m1.apply_bc(A, b, bc_L, bc_R, mu=None)
 
     sol, info = gmres(A, b)
     print('GMRES solver finished with status ', info)
@@ -129,6 +148,7 @@ while (err>newt_tol and ii<maxit):
     vec_sol[:, 1] = sol[N:]
 
     err = np.linalg.norm(sol - sol_old)
+    err_vec.append(err)
     print('Error = ', err)
 
 # x_projected = np.zeros((N, 2))
@@ -147,5 +167,15 @@ m1.plot_discretization(ax)
 fig, ax = plt.subplots()
 m1.plot(ax)
 ax.plot(x_updated[:, 0], x_updated[:, 1], 'gx-')
+
+# detail to show difference between lumping and midpoint
+fig, ax = plt.subplots()
+m1.plot(ax)
+ax.plot(x_updated[:, 0], x_updated[:, 1], 'gx-')
+ax.set_xlim([-1, -0.6])
+ax.set_ylim([-0.05, 0.4])
+
+fig, ax = plt.subplots()
+ax.semilogy(err_vec)
 
 plt.show()

@@ -474,11 +474,16 @@ class Manifold(object):
         M = coo_matrix((Mdata, (row, col)), shape=(2*(N+1), 2*(N+1)))
         return K, M
 
-    def assemble_lumped_mass_newton(self, u):
+    def assemble_lumped_mass_newton(self, u, inexact=True):
         """
         Assembles a lumped mass matrix to be used for the Newton method,
         which corresponds to requiring the grid nodes to lie on the
         curve, instead of the midpoints
+        u: array of shape (N, 2)
+            displacements of the grid points with respect to the reference positions
+        inexact: bool
+            whether to use the projection matrix instead of the full
+            Jacobian of the proximal map
         """
         x = self.grid_coordinates
         x_current = x + u
@@ -488,18 +493,25 @@ class Manifold(object):
         col = []
 
         # compute the first rejection matrix
-        normal_vector = self.normal_vector(x_current[0,:])
-        normal_vector = normal_vector / np.linalg.norm(normal_vector)
-        R_old = np.outer(normal_vector, normal_vector)
+        if inexact:
+            normal_vector = self.normal_vector(x_current[0,:])
+            normal_vector = normal_vector / np.linalg.norm(normal_vector)
+            R_old = np.outer(normal_vector, normal_vector)
+        else:
+            R_old = np.eye(2) - self.prox_jac(x_current[0,:])
 
         for ii in range(N): # loop on elements
             tangent_vector = x[ii+1] - x[ii]
             h = np.linalg.norm(tangent_vector)
             # compute normal vector for second node
             # (first node already done at previous iteration)
-            normal_vector = self.normal_vector(x_current[ii+1,:])
-            normal_vector = normal_vector / np.linalg.norm(normal_vector)
-            R = np.outer(normal_vector, normal_vector)
+            if inexact:
+                normal_vector = self.normal_vector(x_current[ii+1,:])
+                normal_vector = normal_vector / np.linalg.norm(normal_vector)
+                R = np.outer(normal_vector, normal_vector)
+            else:
+                R = np.eye(2) - self.prox_jac(x_current[ii+1,:])
+
 
             for rr in range(2): # first global block-index
                 for ss in range(2): # second global block-index
@@ -575,7 +587,11 @@ class Manifold(object):
                         b[ii + jj + rr*(N+1)] += h*kn[rr]
         return b
 
-    def apply_bc(self, A, b, bc_L, bc_R):
+    def apply_bc(self, A, b, bc_L, bc_R, mu=None):
+        """
+        If mu is provided, it is used to set the diagonal element
+        Otherwise, the diagonal element is kept unchanged
+        """
         x = self.grid_coordinates
         N = x.shape[0]
         # Dirichlet boundary condition: act on first and last line
@@ -590,6 +606,8 @@ class Manifold(object):
                 if A.indices[col_ind]==row_ind:
                     # done like this to try to keep some balance
                     # (setting the diag element to 1 may ruin the condition number)
+                    if mu is not None:
+                        A.data[col_ind] = mu
                     b[row_ind] = A.data[col_ind]*bc_L[ii]
                 # otherwise, set to zero
                 else:
