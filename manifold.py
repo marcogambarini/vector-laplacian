@@ -418,7 +418,7 @@ class Manifold(object):
                                         return_chart_and_param=True)
         return self.charts[chart_index].prox_jac(x)
 
-    def assemble_vector_matrices(self, newton=False, u=None):
+    def assemble_vector_matrices(self, newton=False, u=None, inexact=True):
         """
         Assembles stiffness and mass matrices
         If newton is True (default: False), the additional argoment u
@@ -427,6 +427,8 @@ class Manifold(object):
         configuration with respect to the reference positions. The normals
         used to assemble the mass matrix are then evaluated at the current
         position instead of the reference position.
+        inexact has effect only with Newton
+        (the extension-projection method is always 'exact')
         """
         x = self.grid_coordinates
         if newton:
@@ -447,24 +449,28 @@ class Manifold(object):
                 x_current_midpoint = 0.5 * (x_current[ii] + x_current[ii+1])
                 normal_vector = self.normal_vector(x_current_midpoint)
                 normal_vector = normal_vector / np.linalg.norm(normal_vector)
+                if inexact:
+                    R = np.outer(normal_vector, normal_vector)
+                else:
+                    R = np.eye(2) - self.prox_jac(x_current_midpoint)
+                # local mass matrix (inexact, midpoint quadrature)
+                M_loc = h * np.array(((1/4, 1/4), (1/4, 1/4)))
+
             else:
                 normal_vector = np.array((-tangent_vector[1],
                                        tangent_vector[0]))
                 normal_vector = normal_vector / np.linalg.norm(normal_vector)
-            # rejection matrix
-            R = np.outer(normal_vector, normal_vector)
-            # projection matrix
-            P = np.eye(2) - R
+                # rejection matrix
+                R = np.outer(normal_vector, normal_vector)
+                # local mass matrix (exact)
+                M_loc = h * np.array(((1/3, 1/6), (1/6, 1/3)))
             I = np.eye(2)
             # local stiffness matrix
             K_loc = 1/h * np.array(((1, -1), (-1, 1)))
-            # local mass matrix
-            M_loc = h * np.array(((1/3, 1/6), (1/6, 1/3)))
             for jj in range(2): # first local index
                 for kk in range(2): # second local index
                     for rr in range(2): # first global block-index
                         for ss in range(2): # second global block-index
-                            #Kdata.append(P[rr, ss] * K_loc[jj, kk]) # P used for Hansbo implementation
                             # This is embarassing but clear, so I don't care!
                             Kdata.append(I[rr, ss] * K_loc[jj, kk])
                             Mdata.append(R[rr, ss] * M_loc[jj, kk])

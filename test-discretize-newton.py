@@ -16,7 +16,7 @@ R = 1
 theta = 50*np.pi/180
 
 # mesh size
-h = 0.1
+h = 0.2
 
 # penalty coefficient for tangentiality constraint
 k_penalty = 1e1
@@ -32,6 +32,11 @@ maxit = 50
 
 inexact = True
 mass_lumping = True
+
+plots = False
+
+# create a case name for output files based on user choices
+case_name = 'case2_' + str(int(inexact)) + str(int(mass_lumping))
 
 #------------ end of user-defined parameters ----------------#
 
@@ -87,12 +92,13 @@ print('Newton')
 print('\nIteration 1')
 
 # matrices assembly
-K, M = m1.assemble_vector_matrices()
 if mass_lumping:
+    K, M = m1.assemble_vector_matrices()
     M_lump = m1.assemble_lumped_mass_newton(np.zeros((N, 2)),
                                             inexact=inexact)
     A = K + k_penalty/h**2 * M_lump # system matrix with mass lumping
 else:
+    K, M = m1.assemble_vector_matrices()
     A = K + k_penalty/h**2 * M # system matrix
 
 
@@ -128,14 +134,10 @@ while (err>newt_tol and ii<maxit):
                                 + M_lump@sol_old)
         A = K + k_penalty/h**2 * M_lump
     else:
-        K, M = m1.assemble_vector_matrices(newton=True, u=vec_sol)
+        K, M = m1.assemble_vector_matrices(newton=True, u=vec_sol, inexact=inexact)
         b = k_penalty/h**2 * (m1.assemble_newton_rhs1(u=vec_sol, method='midpoint')
                                 + M@sol_old)
         A = K + k_penalty/h**2 * M
-
-    print('points on each chart in final grid')
-    print(m1.point_distribution_on_charts(vec_sol + x))
-
 
     # m1.apply_bc(A, b, bc_L, bc_R, mu=k_penalty/h**2)
     m1.apply_bc(A, b, bc_L, bc_R, mu=None)
@@ -159,23 +161,26 @@ while (err>newt_tol and ii<maxit):
 
 x_updated = x + vec_sol
 
+np.savez(case_name+'.npz', errvec=err_vec)
 
-fig, ax = plt.subplots()
-m1.plot(ax)
-m1.plot_discretization(ax)
+if plots:
 
-fig, ax = plt.subplots()
-m1.plot(ax)
-ax.plot(x_updated[:, 0], x_updated[:, 1], 'gx-')
+    fig, ax = plt.subplots()
+    m1.plot(ax)
+    m1.plot_discretization(ax)
 
-# detail to show difference between lumping and midpoint
-fig, ax = plt.subplots()
-m1.plot(ax)
-ax.plot(x_updated[:, 0], x_updated[:, 1], 'gx-')
-ax.set_xlim([-1, -0.6])
-ax.set_ylim([-0.05, 0.4])
+    fig, ax = plt.subplots()
+    m1.plot(ax)
+    ax.plot(x_updated[:, 0], x_updated[:, 1], 'gx-')
 
-fig, ax = plt.subplots()
-ax.semilogy(err_vec)
+    # detail to show difference between lumping and midpoint
+    fig, ax = plt.subplots()
+    m1.plot(ax)
+    ax.plot(x_updated[:, 0], x_updated[:, 1], 'gx-')
+    ax.set_xlim([-1, -0.6])
+    ax.set_ylim([-0.05, 0.4])
 
-plt.show()
+    fig, ax = plt.subplots()
+    ax.semilogy(err_vec)
+
+    plt.show()
