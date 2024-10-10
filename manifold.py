@@ -346,6 +346,19 @@ class Manifold(object):
         else:
             return xp
 
+    def point_manifold_distance(self, x):
+        """
+        x: array of shape (N, 2)
+            coordinates of N points
+
+        Returns the vector of distance of all points from the manifold
+        """
+        N = x.shape[0]
+        d = np.zeros(N)
+        for ii in range(N):
+            d[ii] = np.linalg.norm(self.proximal_point(x[ii, :]) - x[ii, :])
+        return d
+
     def discretize_by_glueing(self, h, tol=1e-12, perturb=0):
         charts = self.charts
         x = charts[0].discretize(h)
