@@ -19,7 +19,7 @@ theta = 50*np.pi/180
 h = 0.2
 
 # penalty coefficient for tangentiality constraint
-k_penalty = 1e1
+k_penalty = 1e4
 
 
 # boundary conditions
@@ -29,14 +29,15 @@ bc_R = np.array((0., 0.))
 # newton tolerance
 newt_tol = 1e-6
 maxit = 50
+gmres_rtol = 1e-8
 
-inexact = True
+inexact = False
 mass_lumping = True
 
 plots = False
 
 # create a case name for output files based on user choices
-case_name = 'case2_' + str(int(inexact)) + str(int(mass_lumping))
+case_name = 'case3_' + str(int(inexact)) + str(int(mass_lumping))
 
 #------------ end of user-defined parameters ----------------#
 
@@ -108,7 +109,7 @@ b = np.zeros(2*N)
 #m1.apply_bc(A, b, bc_L, bc_R, mu=k_penalty/h**2)
 m1.apply_bc(A, b, bc_L, bc_R, mu=None)
 
-sol, info = gmres(A, b)
+sol, info = gmres(A, b, rtol=gmres_rtol)
 print('GMRES solver finished with status ', info)
 
 vec_sol = np.zeros((N, 2))
@@ -142,7 +143,7 @@ while (err>newt_tol and ii<maxit):
     # m1.apply_bc(A, b, bc_L, bc_R, mu=k_penalty/h**2)
     m1.apply_bc(A, b, bc_L, bc_R, mu=None)
 
-    sol, info = gmres(A, b)
+    sol, info = gmres(A, b, rtol=gmres_rtol)
     print('GMRES solver finished with status ', info)
 
     vec_sol = np.zeros((N, 2))
