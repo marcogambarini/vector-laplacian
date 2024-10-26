@@ -19,7 +19,7 @@ theta = 50*np.pi/180
 h = 0.2
 
 # penalty coefficient for tangentiality constraint
-k_penalty = 1e4
+k_penalty = 1e3
 
 
 # boundary conditions
@@ -31,7 +31,7 @@ newt_tol = 1e-6
 maxit = 50
 gmres_rtol = 1e-8
 
-inexact = False
+inexact = True
 mass_lumping = True
 
 plots = False
@@ -121,6 +121,7 @@ err = np.linalg.norm(sol - sol_old)
 print('Error = ', err)
 
 err_vec = [err]
+dist_vec = [np.sqrt(np.sum(m1.point_manifold_distance(x + vec_sol)))/N]
 
 while (err>newt_tol and ii<maxit):
 
@@ -140,6 +141,9 @@ while (err>newt_tol and ii<maxit):
                                 + M@sol_old)
         A = K + k_penalty/h**2 * M
 
+    print('condition number = ', np.linalg.cond(A.todense()))
+    print('determinant = ', np.linalg.det(A.todense()))
+
     # m1.apply_bc(A, b, bc_L, bc_R, mu=k_penalty/h**2)
     m1.apply_bc(A, b, bc_L, bc_R, mu=None)
 
@@ -152,6 +156,7 @@ while (err>newt_tol and ii<maxit):
 
     err = np.linalg.norm(sol - sol_old)
     err_vec.append(err)
+    dist_vec.append(np.sqrt(np.sum(m1.point_manifold_distance(x + vec_sol)))/N)
     print('Error = ', err)
 
 # x_projected = np.zeros((N, 2))
@@ -162,7 +167,9 @@ while (err>newt_tol and ii<maxit):
 
 x_updated = x + vec_sol
 
-np.savez(case_name+'.npz', errvec=err_vec)
+np.savez(case_name+'.npz', errvec=err_vec,
+                           distvec=dist_vec,
+                           N=ii)
 
 if plots:
 
